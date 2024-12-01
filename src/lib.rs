@@ -2,6 +2,14 @@ pub mod queue {
     use std::mem::MaybeUninit;
 
     // TODO: Define Queue trait and then try multiple implementations?
+
+    #[derive(Debug, Clone, Eq, PartialEq)]
+    pub enum QueueError {
+        QueueEmpty,
+        QueueFull,
+    }
+
+    // Note: Not sure if it's possible to use the more permissive Clone trait here...
     #[derive(Debug)]
     pub struct Queue<T: Copy, const CAPACITY: usize> {
         size: usize,
@@ -22,31 +30,32 @@ pub mod queue {
             }
         }
 
-        pub fn push(&mut self, input: &T) -> bool {
+        pub fn push(&mut self, input: &T) -> Result<(), QueueError> {
             if self.full() {
-                return false;
+                return Err(QueueError::QueueFull);
             }
 
             unsafe {
                 *(self.buffer[self.tail].as_mut_ptr()) = *input;
             }
+
             self.tail = (self.tail + 1) % CAPACITY;
             self.size += 1;
-            true
+
+            Ok(())
         }
 
-        // Return a result instead of outputting by reference
-        pub fn pop(&mut self, output: &mut T) -> bool {
+        // TODO: Create reference versions of pop and push
+        pub fn pop(&mut self) -> Result<T, QueueError> {
             if self.empty() {
-                return false;
+                return Err(QueueError::QueueEmpty);
             }
 
-            unsafe {
-                *output = *(self.buffer[self.head].as_mut_ptr());
-            }
+            let out_ptr = self.buffer[self.head].as_mut_ptr();
             self.head = (self.head + 1) % CAPACITY;
             self.size -= 1;
-            true
+
+            Ok(unsafe {*out_ptr})
         }
 
         pub fn full(&self) -> bool {
@@ -97,13 +106,13 @@ mod tests {
         let mut queue = Queue::<u32, SIZE>::default();
 
         for n in 0..SIZE {
-            assert!(queue.push(&(n as u32)))
+            assert!(queue.push(&(n as u32)).is_ok())
         }
 
         for n in 0..SIZE {
-            let mut output: u32 = 0;
-            assert!(queue.pop(&mut output));
-            assert_eq!(output, n as u32);
+            let output = queue.pop();
+            assert!(output.is_ok());
+            assert_eq!(output.unwrap(), n as u32);
         }
     }
 
@@ -114,13 +123,12 @@ mod tests {
 
         for n in 0..SIZE {
             assert_eq!(n, queue.size());
-            queue.push(&(n as u32));
+            assert!(queue.push(&(n as u32)).is_ok());
         }
 
         for n in 0..SIZE {
-            let mut output: u32 = 0;
             assert_eq!((SIZE - n), queue.size());
-            queue.pop(&mut output);
+            assert!(queue.pop().is_ok());
         }
     }
 
@@ -132,23 +140,24 @@ mod tests {
 
         for n in 0..SIZE {
             assert!(!queue.full());
-            queue.push(&(n as u32));
+            assert!(queue.push(&(n as u32)).is_ok());
             assert!(!queue.empty());
         }
 
         assert!(queue.full());
-        assert!(!queue.push(&0));
+        let res = queue.push(&0);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err(), QueueError::QueueFull);
 
         for _ in 0..SIZE {
             assert!(!queue.empty());
-            let mut output: u32 = 0;
-            queue.pop(&mut output);
+            assert!(queue.pop().is_ok());
             assert!(!queue.full());
         }
 
-        let mut output: u32 = 0;
-        assert!(!queue.pop(&mut output));
-        assert!(queue.empty());
+        let output = queue.pop();
+        assert!(output.is_err());
+        assert_eq!(output.unwrap_err(), QueueError::QueueEmpty);
     }
 
     #[test]
@@ -158,23 +167,22 @@ mod tests {
 
         // Enqueue/dequeue half capacity to move head/tail to SIZE/2
         for n in 0..SIZE/2 {
-            queue.push(&(n as u32));
+            assert!(queue.push(&(n as u32)).is_ok());
         }
 
         for _ in 0..SIZE/2 {
-            let mut output: u32 = 0;
-            queue.pop(&mut output);
+            assert!(queue.pop().is_ok());
         }
 
         // Now perform full enqueue/dequeue check to verify wrap logic 
         for n in 0..SIZE {
-            assert!(queue.push(&(n as u32)))
+            assert!(queue.push(&(n as u32)).is_ok())
         }
 
         for n in 0..SIZE {
-            let mut output: u32 = 0;
-            assert!(queue.pop(&mut output));
-            assert_eq!(output, n as u32);
+            let output = queue.pop();
+            assert!(output.is_ok());
+            assert_eq!(output.unwrap(), n as u32);
         }
     }
 
