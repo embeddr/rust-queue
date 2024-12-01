@@ -19,13 +19,11 @@ pub mod inline {
     impl<T: Copy, const CAPACITY: usize> Queue<T, CAPACITY> {
         /// Create a new inline queue for the specified type and of the specified capacity.
         pub fn new() -> Queue<T, CAPACITY> {
-            unsafe {
-                Queue {
-                    size: 0,
-                    head: 0,
-                    tail: 0,
-                    buffer: [MaybeUninit::uninit().assume_init(); CAPACITY],
-                }
+            Queue {
+                size: 0,
+                head: 0,
+                tail: 0,
+                buffer: [MaybeUninit::uninit(); CAPACITY],
             }
         }
 
