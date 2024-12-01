@@ -1,4 +1,4 @@
-pub mod queue {
+pub mod inline {
     use std::mem::MaybeUninit;
 
     #[derive(Debug, Clone, Eq, PartialEq)]
@@ -17,6 +17,7 @@ pub mod queue {
     }
 
     impl<T: Copy, const CAPACITY: usize> Queue<T, CAPACITY> {
+        /// Create a new inline queue for the specified type and of the specified capacity.
         pub fn new() -> Queue<T, CAPACITY> {
             unsafe {
                 Queue {
@@ -28,10 +29,15 @@ pub mod queue {
             }
         }
 
+        /// Push an element to the queue. Returns None or QueueError::QueueFull.
         pub fn push(&mut self, input: T) -> Result<(), QueueError> {
             self.push_ref(&input)
         }
 
+        /// Push an element reference to the queue. Returns None or QueueError::QueueFull.
+        ///
+        /// This may be preferable over `push()` for types that are expensive to copy, as it
+        /// eliminates the extra copy incurred by passing by value.
         pub fn push_ref(&mut self, input: &T) -> Result<(), QueueError> {
             if self.full() {
                 return Err(QueueError::QueueFull);
@@ -47,6 +53,7 @@ pub mod queue {
             Ok(())
         }
 
+        /// Pop an element from the queue. Returns the element or QueueError::QueueEmpty.
         pub fn pop(&mut self) -> Result<T, QueueError> {
             let mut value = MaybeUninit::<T>::uninit();
             // We can safely pass the uninit value into `pop_ref()` because we know `pop_ref()` will
@@ -59,8 +66,12 @@ pub mod queue {
             }
         }
 
+        /// Pop an element reference from the queue. Returns the element or QueueError::QueueEmpty.
+        ///
+        /// This may be preferable over `pop()` for types that are expensive to copy, as it
+        /// eliminates the extra copy incurred by returning the result by value.
         pub fn pop_ref(&mut self, output: &mut T) -> Result<(), QueueError> {
-            if self.empty() {
+                if self.empty() {
                 return Err(QueueError::QueueEmpty);
             }
 
@@ -71,14 +82,17 @@ pub mod queue {
             Ok(())
         }
 
+        /// Check if the queue is full.
         pub fn full(&self) -> bool {
             self.size() == CAPACITY
         }
 
+        /// Check if the queue is empty.
         pub fn empty(&self) -> bool {
             self.size() == 0
         }
 
+        /// Get the current number of elements in the queue.
         pub fn size(&self) -> usize {
             self.size
         }
@@ -93,7 +107,8 @@ pub mod queue {
 
 #[cfg(test)]
 mod tests {
-    use super::queue::*;
+    use super::inline::Queue;
+    use super::inline::QueueError;
 
     #[test]
     fn it_works() {
