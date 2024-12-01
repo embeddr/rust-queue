@@ -1,20 +1,24 @@
 pub mod queue {
+    use std::mem::MaybeUninit;
+
+    // TODO: Define Queue trait and then try multiple implementations?
     #[derive(Debug)]
-    // TODO: Probably don't actually need Default...
-    pub struct Queue<T: Default + Copy, const CAPACITY: usize> {
+    pub struct Queue<T: Copy, const CAPACITY: usize> {
         size: usize,
         head: usize,
         tail: usize,
-        buffer: [T; CAPACITY],
+        buffer: [MaybeUninit<T>; CAPACITY],
     }
 
-    impl<T: Default + Copy, const CAPACITY: usize> Queue<T, CAPACITY> {
+    impl<T: Copy, const CAPACITY: usize> Queue<T, CAPACITY> {
         pub fn new() -> Queue<T, CAPACITY> {
-            Queue {
-                size: 0,
-                head: 0,
-                tail: 0,
-                buffer: [T::default(); CAPACITY],
+            unsafe {
+                Queue {
+                    size: 0,
+                    head: 0,
+                    tail: 0,
+                    buffer: [MaybeUninit::uninit().assume_init(); CAPACITY],
+                }
             }
         }
 
@@ -23,18 +27,23 @@ pub mod queue {
                 return false;
             }
 
-            self.buffer[self.tail] = *input;
+            unsafe {
+                *(self.buffer[self.tail].as_mut_ptr()) = *input;
+            }
             self.tail = (self.tail + 1) % CAPACITY;
             self.size += 1;
             true
         }
 
+        // Return a result instead of outputting by reference
         pub fn pop(&mut self, output: &mut T) -> bool {
             if self.empty() {
                 return false;
             }
 
-            *output = self.buffer[self.head];
+            unsafe {
+                *output = *(self.buffer[self.head].as_mut_ptr());
+            }
             self.head = (self.head + 1) % CAPACITY;
             self.size -= 1;
             true
@@ -53,9 +62,8 @@ pub mod queue {
         }
     }
 
-    // This is super verbose... how can it be simplified? Grouped with the above?
-    impl<T: Default + Copy, const CAPACITY: usize> Default for Queue<T, CAPACITY> {
-        fn default() -> Queue<T, CAPACITY> {
+    impl<T: Copy, const CAPACITY: usize> Default for Queue<T, CAPACITY> {
+        fn default() -> Self {
             Queue::new()
         }
     }
