@@ -1,43 +1,76 @@
 pub mod inline {
     use std::mem::MaybeUninit;
 
+    // Trait for a queue that works with a fixed type as specified by the generic parameter. The
+    // queue fails to push when full, rather than overwriting the oldest element.
+    pub trait TypedQueue<T: Copy> {
+        /// Push an element to the queue by value. Returns None if successful, or else
+        /// QueueError::QueueFull.
+        fn push(&mut self, input: T) -> Result<(), QueueError>;
+
+        /// Push an element to the queue by reference. Returns None if successful, or else
+        /// QueueError::QueueFull.
+        ///
+        /// This may be preferable over `push()` for types that are expensive to copy, as it
+        /// eliminates the extra copy incurred by passing by value.
+        fn push_ref(&mut self, input: &T) -> Result<(), QueueError>;
+
+        /// Pop an element from the queue by value. Returns the element if successful, or else
+        /// QueueError::QueueEmpty.
+        fn pop(&mut self) -> Result<T, QueueError>;
+
+        /// Pop an element from the queue by reference. Returns the element if successful, or else
+        /// QueueError::QueueEmpty.
+        ///
+        /// This may be preferable over `pop()` for types that are expensive to copy, as it
+        /// eliminates the extra copy incurred by returning the result by value.
+        fn pop_ref(&mut self, output: &mut T) -> Result<(), QueueError>;
+
+        /// Check if the queue is full.
+        fn is_full(&self) -> bool;
+
+        /// Check if the queue is empty.
+        fn is_empty(&self) -> bool;
+
+        /// Get the current number of elements in the queue.
+        fn size(&self) -> usize;
+    }
+
     #[derive(Debug, Clone, Eq, PartialEq)]
     pub enum QueueError {
+        // The pop operation has failed due to the queue being empty.
         QueueEmpty,
+        // The push operation has failed due to the queue being full.
         QueueFull,
     }
 
-    // Not sure if it's possible to use the more permissive Clone trait here...
     #[derive(Debug, Copy, Clone)]
-    pub struct Queue<T: Copy, const CAPACITY: usize> {
+    pub struct BasicTypedQueue<T: Copy, const CAPACITY: usize> {
         size: usize,
         head: usize,
         tail: usize,
         buffer: [MaybeUninit<T>; CAPACITY],
     }
 
-    impl<T: Copy, const CAPACITY: usize> Queue<T, CAPACITY> {
+    impl<T: Copy, const CAPACITY: usize> BasicTypedQueue<T, CAPACITY> {
         /// Create a new inline queue for the specified type and of the specified capacity.
-        pub fn new() -> Queue<T, CAPACITY> {
-            Queue {
+        pub fn new() -> BasicTypedQueue<T, CAPACITY> {
+            BasicTypedQueue {
                 size: 0,
                 head: 0,
                 tail: 0,
                 buffer: [MaybeUninit::uninit(); CAPACITY],
             }
         }
+    }
 
-        /// Push an element to the queue. Returns None or QueueError::QueueFull.
-        pub fn push(&mut self, input: T) -> Result<(), QueueError> {
+    impl<T: Copy, const CAPACITY: usize> TypedQueue<T> for BasicTypedQueue<T, CAPACITY> {
+        fn push(&mut self, input: T) -> Result<(), QueueError> {
             self.push_ref(&input)
         }
 
-        /// Push an element reference to the queue. Returns None or QueueError::QueueFull.
-        ///
-        /// This may be preferable over `push()` for types that are expensive to copy, as it
-        /// eliminates the extra copy incurred by passing by value.
-        pub fn push_ref(&mut self, input: &T) -> Result<(), QueueError> {
-            if self.full() {
+        fn push_ref(&mut self, input: &T) -> Result<(), QueueError> {
+            if self.is_full() {
                 return Err(QueueError::QueueFull);
             }
 
@@ -51,8 +84,7 @@ pub mod inline {
             Ok(())
         }
 
-        /// Pop an element from the queue. Returns the element or QueueError::QueueEmpty.
-        pub fn pop(&mut self) -> Result<T, QueueError> {
+        fn pop(&mut self) -> Result<T, QueueError> {
             let mut value = MaybeUninit::<T>::uninit();
             // We can safely pass the uninit value into `pop_ref()` because we know `pop_ref()` will
             // not read the value, only copy into it. If `pop_ref()` fails, we never access `value`.
@@ -64,12 +96,8 @@ pub mod inline {
             }
         }
 
-        /// Pop an element reference from the queue. Returns the element or QueueError::QueueEmpty.
-        ///
-        /// This may be preferable over `pop()` for types that are expensive to copy, as it
-        /// eliminates the extra copy incurred by returning the result by value.
-        pub fn pop_ref(&mut self, output: &mut T) -> Result<(), QueueError> {
-                if self.empty() {
+        fn pop_ref(&mut self, output: &mut T) -> Result<(), QueueError> {
+            if self.is_empty() {
                 return Err(QueueError::QueueEmpty);
             }
 
@@ -80,33 +108,29 @@ pub mod inline {
             Ok(())
         }
 
-        /// Check if the queue is full.
-        pub fn full(&self) -> bool {
+        fn is_full(&self) -> bool {
             self.size() == CAPACITY
         }
 
-        /// Check if the queue is empty.
-        pub fn empty(&self) -> bool {
+        fn is_empty(&self) -> bool {
             self.size() == 0
         }
 
-        /// Get the current number of elements in the queue.
-        pub fn size(&self) -> usize {
+        fn size(&self) -> usize {
             self.size
         }
     }
 
-    impl<T: Copy, const CAPACITY: usize> Default for Queue<T, CAPACITY> {
+    impl<T: Copy, const CAPACITY: usize> Default for BasicTypedQueue<T, CAPACITY> {
         fn default() -> Self {
-            Queue::new()
+            BasicTypedQueue::new()
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::inline::Queue;
-    use super::inline::QueueError;
+    use super::inline::{BasicTypedQueue, QueueError, TypedQueue};
 
     #[test]
     fn it_works() {
@@ -116,20 +140,20 @@ mod tests {
 
     #[test]
     fn new() {
-        let queue = Queue::<u32, 16>::new();
+        let queue = BasicTypedQueue::<u32, 16>::new();
         println!("{:?}", queue);
     }
 
     #[test]
     fn default() {
-        let queue = Queue::<u32, 16>::default();
+        let queue = BasicTypedQueue::<u32, 16>::default();
         println!("{:?}", queue);
     }
 
     #[test]
     fn push_pop() {
         const SIZE: usize = 16;
-        let mut queue = Queue::<u32, SIZE>::default();
+        let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
         for n in 0..SIZE {
             assert!(queue.push(n as u32).is_ok())
@@ -145,7 +169,7 @@ mod tests {
     #[test]
     fn push_ref_pop_ref() {
         const SIZE: usize = 16;
-        let mut queue = Queue::<u32, SIZE>::default();
+        let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
         for n in 0..SIZE {
             assert!(queue.push_ref(&(n as u32)).is_ok())
@@ -162,7 +186,7 @@ mod tests {
     #[test]
     fn size() {
         const SIZE: usize = 16;
-        let mut queue = Queue::<u32, SIZE>::default();
+        let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
         for n in 0..SIZE {
             assert_eq!(n, queue.size());
@@ -178,24 +202,24 @@ mod tests {
     #[test]
     fn empty_full() {
         const SIZE: usize = 16;
-        let mut queue = Queue::<u32, SIZE>::default();
-        assert!(queue.empty());
+        let mut queue = BasicTypedQueue::<u32, SIZE>::default();
+        assert!(queue.is_empty());
 
         for n in 0..SIZE {
-            assert!(!queue.full());
+            assert!(!queue.is_full());
             assert!(queue.push(n as u32).is_ok());
-            assert!(!queue.empty());
+            assert!(!queue.is_empty());
         }
 
-        assert!(queue.full());
+        assert!(queue.is_full());
         let res = queue.push(0);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err(), QueueError::QueueFull);
 
         for _ in 0..SIZE {
-            assert!(!queue.empty());
+            assert!(!queue.is_empty());
             assert!(queue.pop().is_ok());
-            assert!(!queue.full());
+            assert!(!queue.is_full());
         }
 
         let output = queue.pop();
@@ -206,7 +230,7 @@ mod tests {
     #[test]
     fn wrap() {
         const SIZE: usize = 16;
-        let mut queue = Queue::<u32, SIZE>::default();
+        let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
         // push/pop half capacity to move head/tail to SIZE/2
         for n in 0..SIZE / 2 {
