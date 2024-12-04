@@ -1,6 +1,9 @@
 pub mod inline {
     use std::mem::MaybeUninit;
 
+    // TODO: Add iterator
+    // TOOD: Add overwrite arg to push fxns
+
     // Trait for a queue that works with a fixed type as specified by the generic parameter. The
     // queue fails to push when full, rather than overwriting the oldest element.
     pub trait TypedQueue<T: Copy> {
@@ -26,6 +29,10 @@ pub mod inline {
         /// eliminates the extra copy incurred by returning the result by value.
         fn pop_ref(&mut self, output: &mut T) -> Result<(), QueueError>;
 
+        fn front(&mut self) -> Result<&T, QueueError>;
+
+        fn back(&mut self) -> Result<&T, QueueError>;
+
         /// Check if the queue is full.
         fn is_full(&self) -> bool;
 
@@ -34,16 +41,21 @@ pub mod inline {
 
         /// Get the current number of elements in the queue.
         fn size(&self) -> usize;
+
+        // Get the maximum number of elements the queue can hold.
+        fn capacity(&self) -> usize;
     }
 
+    /// Enum indicating why a queue operation failed.
     #[derive(Debug, Clone, Eq, PartialEq)]
     pub enum QueueError {
-        // The pop operation has failed due to the queue being empty.
+        /// The pop operation has failed due to the queue being empty.
         QueueEmpty,
-        // The push operation has failed due to the queue being full.
+        /// The push operation has failed due to the queue being full.
         QueueFull,
     }
 
+    // Basic typed queue struct. The implementation for this struct is NOT thread-safe.
     #[derive(Debug, Copy, Clone)]
     pub struct BasicTypedQueue<T: Copy, const CAPACITY: usize> {
         size: usize,
@@ -61,6 +73,12 @@ pub mod inline {
                 tail: 0,
                 buffer: [MaybeUninit::uninit(); CAPACITY],
             }
+        }
+    }
+
+    impl<T: Copy, const CAPACITY: usize> Default for BasicTypedQueue<T, CAPACITY> {
+        fn default() -> Self {
+            BasicTypedQueue::new()
         }
     }
 
@@ -108,6 +126,23 @@ pub mod inline {
             Ok(())
         }
 
+        fn front(&mut self) -> Result<&T, QueueError> {
+            if self.is_empty() {
+                return Err(QueueError::QueueEmpty);
+            }
+
+            Ok(unsafe { self.buffer[self.head].assume_init_ref() })
+        }
+
+        fn back(&mut self) -> Result<&T, QueueError> {
+            if self.is_empty() {
+                return Err(QueueError::QueueEmpty);
+            }
+
+            let back_idx = (self.tail + CAPACITY - 1) % CAPACITY;
+            Ok(unsafe { self.buffer[back_idx].assume_init_ref() })
+        }
+
         fn is_full(&self) -> bool {
             self.size() == CAPACITY
         }
@@ -119,11 +154,9 @@ pub mod inline {
         fn size(&self) -> usize {
             self.size
         }
-    }
 
-    impl<T: Copy, const CAPACITY: usize> Default for BasicTypedQueue<T, CAPACITY> {
-        fn default() -> Self {
-            BasicTypedQueue::new()
+        fn capacity(&self) -> usize {
+            CAPACITY
         }
     }
 }
@@ -132,27 +165,23 @@ pub mod inline {
 mod tests {
     use super::inline::{BasicTypedQueue, QueueError, TypedQueue};
 
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
+    // Arbitrary queue size for tests
+    const SIZE: usize = 16;
 
     #[test]
     fn new() {
-        let queue = BasicTypedQueue::<u32, 16>::new();
+        let queue = BasicTypedQueue::<u32, SIZE>::new();
         println!("{:?}", queue);
     }
 
     #[test]
     fn default() {
-        let queue = BasicTypedQueue::<u32, 16>::default();
+        let queue = BasicTypedQueue::<u32, SIZE>::default();
         println!("{:?}", queue);
     }
 
     #[test]
     fn push_pop() {
-        const SIZE: usize = 16;
         let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
         for n in 0..SIZE {
@@ -168,7 +197,6 @@ mod tests {
 
     #[test]
     fn push_ref_pop_ref() {
-        const SIZE: usize = 16;
         let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
         for n in 0..SIZE {
@@ -184,24 +212,44 @@ mod tests {
     }
 
     #[test]
-    fn size() {
-        const SIZE: usize = 16;
+    fn wrap() {
         let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
-        for n in 0..SIZE {
-            assert_eq!(n, queue.size());
+        // push/pop half capacity to move head/tail to SIZE/2
+        for n in 0..SIZE / 2 {
             assert!(queue.push(n as u32).is_ok());
         }
 
-        for n in 0..SIZE {
-            assert_eq!((SIZE - n), queue.size());
+        for _ in 0..SIZE / 2 {
             assert!(queue.pop().is_ok());
+        }
+
+        // Now perform full push/pop check to verify wrap logic
+        for n in 0..SIZE {
+            assert!(queue.push(n as u32).is_ok())
+        }
+
+        for n in 0..SIZE {
+            let output = queue.pop();
+            assert!(output.is_ok());
+            assert_eq!(output.unwrap(), n as u32);
         }
     }
 
     #[test]
+    fn front_back() {
+        let mut queue = BasicTypedQueue::<u32, SIZE>::default();
+        assert_eq!(queue.front().unwrap_err(), QueueError::QueueEmpty);
+        assert_eq!(queue.back().unwrap_err(), QueueError::QueueEmpty);
+
+        const VALUE: u32 = 123;
+        assert!(queue.push(VALUE).is_ok());
+        assert_eq!(*queue.front().unwrap(), VALUE);
+        assert_eq!(*queue.back().unwrap(), VALUE);
+    }
+
+    #[test]
     fn empty_full() {
-        const SIZE: usize = 16;
         let mut queue = BasicTypedQueue::<u32, SIZE>::default();
         assert!(queue.is_empty());
 
@@ -228,28 +276,26 @@ mod tests {
     }
 
     #[test]
-    fn wrap() {
-        const SIZE: usize = 16;
+    fn size() {
         let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
-        // push/pop half capacity to move head/tail to SIZE/2
-        for n in 0..SIZE / 2 {
+        for n in 0..SIZE {
+            assert_eq!(n, queue.size());
             assert!(queue.push(n as u32).is_ok());
         }
 
-        for _ in 0..SIZE / 2 {
+        for n in 0..SIZE {
+            assert_eq!((SIZE - n), queue.size());
             assert!(queue.pop().is_ok());
         }
+    }
 
-        // Now perform full push/pop check to verify wrap logic
-        for n in 0..SIZE {
-            assert!(queue.push(n as u32).is_ok())
-        }
+    #[test]
+    fn capacity() {
+        let queue = BasicTypedQueue::<u32, SIZE>::default();
+        assert_eq!(queue.capacity(), SIZE);
 
-        for n in 0..SIZE {
-            let output = queue.pop();
-            assert!(output.is_ok());
-            assert_eq!(output.unwrap(), n as u32);
-        }
+        let smaller_queue = BasicTypedQueue::<u32, { SIZE - 1 }>::default();
+        assert_eq!(smaller_queue.capacity(), SIZE - 1);
     }
 }
