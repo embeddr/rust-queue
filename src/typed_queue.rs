@@ -1,9 +1,6 @@
-// TODO: Add iterator
-// TODO: infinite capacity?
-
 // Trait for a fixed-capacity queue that stores with a generic type in FIFO fashion. Provides
 // overwriting and non-overwriting APIs.
-pub trait TypedQueue<T: Copy, const CAPACITY: usize> {
+pub trait TypedQueue<T: Copy> {
     /// Push an element to the queue by value. Returns None if successful, or else
     /// QueueError::QueueFull.
     fn push(&mut self, input: T) -> Result<(), QueueError>;
@@ -27,10 +24,10 @@ pub trait TypedQueue<T: Copy, const CAPACITY: usize> {
     fn pop_ref(&mut self, output: &mut T) -> Result<(), QueueError>;
 
     // Get a reference to the oldest (next to be popped) element in the queue, if any exists.
-    fn front(&mut self) -> Result<&T, QueueError>;
+    fn front(&self) -> Result<&T, QueueError>;
 
     // Get a reference to the newest (most recently pushed) element in the queue, if any exists.
-    fn back(&mut self) -> Result<&T, QueueError>;
+    fn back(&self) -> Result<&T, QueueError>;
 
     /// Check if the queue is full.
     fn is_full(&self) -> bool;

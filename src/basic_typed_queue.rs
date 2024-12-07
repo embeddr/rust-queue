@@ -1,13 +1,13 @@
-use std::mem::MaybeUninit;
 use std::cmp::min;
+use std::mem::MaybeUninit;
 
 use crate::typed_queue::QueueError;
 use crate::typed_queue::TypedQueue;
 
-// Basic typed queue struct. The implementation for this struct is NOT thread-safe.
+// Basic typed queue struct with queue size specified at capacity. Not thread-safe.
 #[derive(Debug, Copy, Clone)]
 pub struct BasicTypedQueue<T: Copy, const CAPACITY: usize> {
-    size: usize,
+    size: usize, // not strictly necessary, but simplifies logic
     head: usize,
     tail: usize,
     buffer: [MaybeUninit<T>; CAPACITY],
@@ -31,7 +31,7 @@ impl<T: Copy, const CAPACITY: usize> Default for BasicTypedQueue<T, CAPACITY> {
     }
 }
 
-impl<T: Copy, const CAPACITY: usize> TypedQueue<T, CAPACITY> for BasicTypedQueue<T, CAPACITY> {
+impl<T: Copy, const CAPACITY: usize> TypedQueue<T> for BasicTypedQueue<T, CAPACITY> {
     fn push(&mut self, input: T) -> Result<(), QueueError> {
         self.push_ref(&input)
     }
@@ -61,7 +61,7 @@ impl<T: Copy, const CAPACITY: usize> TypedQueue<T, CAPACITY> for BasicTypedQueue
         }
 
         self.tail = (self.tail + 1) % CAPACITY;
-        self.size  = min(self.size + 1, CAPACITY);
+        self.size = min(self.size + 1, CAPACITY);
     }
 
     fn pop(&mut self) -> Result<T, QueueError> {
@@ -88,7 +88,7 @@ impl<T: Copy, const CAPACITY: usize> TypedQueue<T, CAPACITY> for BasicTypedQueue
         Ok(())
     }
 
-    fn front(&mut self) -> Result<&T, QueueError> {
+    fn front(&self) -> Result<&T, QueueError> {
         if self.is_empty() {
             return Err(QueueError::QueueEmpty);
         }
@@ -96,7 +96,7 @@ impl<T: Copy, const CAPACITY: usize> TypedQueue<T, CAPACITY> for BasicTypedQueue
         Ok(unsafe { self.buffer[self.head].assume_init_ref() })
     }
 
-    fn back(&mut self) -> Result<&T, QueueError> {
+    fn back(&self) -> Result<&T, QueueError> {
         if self.is_empty() {
             return Err(QueueError::QueueEmpty);
         }
@@ -158,6 +158,21 @@ mod tests {
     }
 
     #[test]
+    fn push_overwrite_pop() {
+        let mut queue = BasicTypedQueue::<u32, SIZE>::default();
+
+        for n in 0..SIZE {
+            assert!(queue.push(n as u32).is_ok())
+        }
+
+        // Overwrite oldest element (0) with SIZE
+        queue.push_overwrite(SIZE as u32);
+        let output = queue.pop();
+        assert!(output.is_ok());
+        assert_eq!(output.unwrap(), SIZE as u32);
+    }
+
+    #[test]
     fn push_ref_pop_ref() {
         let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
@@ -171,6 +186,23 @@ mod tests {
             assert!(res.is_ok());
             assert_eq!(output, n as u32);
         }
+    }
+
+    #[test]
+    fn push_ref_overwrite_pop() {
+        let mut queue = BasicTypedQueue::<u32, SIZE>::default();
+
+        for n in 0..SIZE {
+            assert!(queue.push_ref(&(n as u32)).is_ok())
+        }
+
+        // Overwrite oldest element (0) with SIZE
+        queue.push_ref_overwrite(&(SIZE as u32));
+
+        let mut output: u32 = 0;
+        let res = queue.pop_ref(&mut output);
+        assert!(res.is_ok());
+        assert_eq!(output, SIZE as u32);
     }
 
     #[test]
