@@ -4,8 +4,8 @@ use std::mem::MaybeUninit;
 use crate::typed_queue::QueueError;
 use crate::typed_queue::TypedQueue;
 
-// Basic typed queue struct with queue size specified at capacity. Not thread-safe.
-#[derive(Debug, Copy, Clone)]
+// Basic typed queue struct with generic capacity. Not thread-safe.
+#[derive(Copy, Clone)]
 pub struct BasicTypedQueue<T: Copy, const CAPACITY: usize> {
     size: usize, // not strictly necessary, but simplifies logic
     head: usize,
@@ -15,13 +15,32 @@ pub struct BasicTypedQueue<T: Copy, const CAPACITY: usize> {
 
 impl<T: Copy, const CAPACITY: usize> BasicTypedQueue<T, CAPACITY> {
     /// Create a new inline queue for the specified type and of the specified capacity.
-    pub fn new() -> BasicTypedQueue<T, CAPACITY> {
+    pub fn new() -> Self {
         BasicTypedQueue {
             size: 0,
             head: 0,
             tail: 0,
             buffer: [MaybeUninit::uninit(); CAPACITY],
         }
+    }
+
+    /// Try to get an immutable reference to the oldest element in the queue.
+    pub fn front(&self) -> Result<&T, QueueError> {
+        if self.is_empty() {
+            return Err(QueueError::QueueEmpty);
+        }
+
+        Ok(unsafe { self.buffer[self.head].assume_init_ref() })
+    }
+
+    /// Try to get an immutable reference to the newest element in the queue.
+    pub fn back(&self) -> Result<&T, QueueError> {
+        if self.is_empty() {
+            return Err(QueueError::QueueEmpty);
+        }
+
+        let back_idx = (self.tail + CAPACITY - 1) % CAPACITY;
+        Ok(unsafe { self.buffer[back_idx].assume_init_ref() })
     }
 }
 
@@ -36,7 +55,7 @@ impl<T: Copy, const CAPACITY: usize> TypedQueue<T> for BasicTypedQueue<T, CAPACI
         self.push_ref(&input)
     }
 
-    fn push_overwrite(&mut self, input: T) {
+    fn push_overwrite(&mut self, input: T) -> Result<(), QueueError> {
         self.push_ref_overwrite(&input)
     }
 
@@ -55,13 +74,15 @@ impl<T: Copy, const CAPACITY: usize> TypedQueue<T> for BasicTypedQueue<T, CAPACI
         Ok(())
     }
 
-    fn push_ref_overwrite(&mut self, input: &T) {
+    fn push_ref_overwrite(&mut self, input: &T) -> Result<(), QueueError> {
         unsafe {
             *(self.buffer[self.tail].as_mut_ptr()) = *input;
         }
 
         self.tail = (self.tail + 1) % CAPACITY;
         self.size = min(self.size + 1, CAPACITY);
+
+        Ok(())
     }
 
     fn pop(&mut self) -> Result<T, QueueError> {
@@ -86,23 +107,6 @@ impl<T: Copy, const CAPACITY: usize> TypedQueue<T> for BasicTypedQueue<T, CAPACI
         self.size -= 1;
 
         Ok(())
-    }
-
-    fn front(&self) -> Result<&T, QueueError> {
-        if self.is_empty() {
-            return Err(QueueError::QueueEmpty);
-        }
-
-        Ok(unsafe { self.buffer[self.head].assume_init_ref() })
-    }
-
-    fn back(&self) -> Result<&T, QueueError> {
-        if self.is_empty() {
-            return Err(QueueError::QueueEmpty);
-        }
-
-        let back_idx = (self.tail + CAPACITY - 1) % CAPACITY;
-        Ok(unsafe { self.buffer[back_idx].assume_init_ref() })
     }
 
     fn is_full(&self) -> bool {
@@ -131,18 +135,6 @@ mod tests {
     const SIZE: usize = 16;
 
     #[test]
-    fn new() {
-        let queue = BasicTypedQueue::<u32, SIZE>::new();
-        println!("{:?}", queue);
-    }
-
-    #[test]
-    fn default() {
-        let queue = BasicTypedQueue::<u32, SIZE>::default();
-        println!("{:?}", queue);
-    }
-
-    #[test]
     fn push_pop() {
         let mut queue = BasicTypedQueue::<u32, SIZE>::default();
 
@@ -166,7 +158,8 @@ mod tests {
         }
 
         // Overwrite oldest element (0) with SIZE
-        queue.push_overwrite(SIZE as u32);
+        assert!(queue.push_overwrite(SIZE as u32).is_ok());
+
         let output = queue.pop();
         assert!(output.is_ok());
         assert_eq!(output.unwrap(), SIZE as u32);
@@ -197,7 +190,7 @@ mod tests {
         }
 
         // Overwrite oldest element (0) with SIZE
-        queue.push_ref_overwrite(&(SIZE as u32));
+        assert!(queue.push_ref_overwrite(&(SIZE as u32)).is_ok());
 
         let mut output: u32 = 0;
         let res = queue.pop_ref(&mut output);
@@ -240,6 +233,11 @@ mod tests {
         assert!(queue.push(VALUE).is_ok());
         assert_eq!(*queue.front().unwrap(), VALUE);
         assert_eq!(*queue.back().unwrap(), VALUE);
+
+        // Borrow checker prevents mutating while holding reference
+        let front = queue.front().unwrap();
+        // let res = queue.pop();  // not allowed
+        println!("{}", front);
     }
 
     #[test]

@@ -1,33 +1,23 @@
 // Trait for a fixed-capacity queue that stores with a generic type in FIFO fashion. Provides
 // overwriting and non-overwriting APIs.
 pub trait TypedQueue<T: Copy> {
-    /// Push an element to the queue by value. Returns None if successful, or else
-    /// QueueError::QueueFull.
+    /// Push an element to the queue by value. Fails if queue is full.
     fn push(&mut self, input: T) -> Result<(), QueueError>;
 
     /// Push an element to the queue by value. Overwrite the oldest value if the queue is full.
-    fn push_overwrite(&mut self, input: T);
+    fn push_overwrite(&mut self, input: T) -> Result<(), QueueError>;
 
-    /// Push an element to the queue by reference. Returns None if successful, or else
-    /// QueueError::QueueFull.
+    /// Push an element to the queue by reference. Fails if queue is full.
     fn push_ref(&mut self, input: &T) -> Result<(), QueueError>;
 
     /// Push an element to the queue by reference. Overwrite the oldest value if the queue is full.
-    fn push_ref_overwrite(&mut self, input: &T);
+    fn push_ref_overwrite(&mut self, input: &T) -> Result<(), QueueError>;
 
-    /// Pop an element from the queue by value. Returns the element if successful, or else
-    /// QueueError::QueueEmpty.
+    /// Pop an element from the queue by value. Fails if queue is empty.
     fn pop(&mut self) -> Result<T, QueueError>;
 
-    /// Pop an element from the queue by reference. Returns the element if successful, or else
-    /// QueueError::QueueEmpty.
+    /// Pop an element from the queue by reference. Fails if queue is empty.
     fn pop_ref(&mut self, output: &mut T) -> Result<(), QueueError>;
-
-    // Get a reference to the oldest (next to be popped) element in the queue, if any exists.
-    fn front(&self) -> Result<&T, QueueError>;
-
-    // Get a reference to the newest (most recently pushed) element in the queue, if any exists.
-    fn back(&self) -> Result<&T, QueueError>;
 
     /// Check if the queue is full.
     fn is_full(&self) -> bool;
@@ -49,4 +39,6 @@ pub enum QueueError {
     QueueEmpty,
     /// The push operation has failed due to the queue being full.
     QueueFull,
+    /// Another thread panicked while holding the queue's mutex.
+    MutexPoisoned,
 }
